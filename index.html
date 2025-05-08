@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stone Miner Gold Game</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #333;
+            font-family: Arial, sans-serif;
+        }
+        canvas {
+            display: block;
+            background-color: #87CEEB;
+        }
+        #gameContainer {
+            position: relative;
+            width: 800px;
+            height: 600px;
+            margin: 20px auto;
+        }
+        #gameInfo {
+            color: white;
+            text-align: center;
+            padding: 10px;
+            font-size: 18px;
+        }
+        .corner-logo {
+            position: absolute;
+            width: 60px;
+            height: 60px;
+            background-size: contain;
+            background-repeat: no-repeat;
+            z-index: 10;
+        }
+        #logo1 { top: 10px; left: 10px; }
+        #logo2 { top: 10px; right: 10px; }
+        #logo3 { bottom: 10px; left: 10px; }
+        #logo4 { bottom: 10px; right: 10px; }
+    </style>
+</head>
+<body>
+    <div id="gameInfo">
+        <span>Score: <span id="scoreDisplay">0</span></span>
+        <span style="margin-left: 20px;">Turns Left: <span id="turnsDisplay">5</span></span>
+        <p>Use LEFT and RIGHT arrow keys to move, SPACE to drop hook</p>
+    </div>
+    <div id="gameContainer">
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+        <div class="corner-logo" id="logo1"></div>
+        <div class="corner-logo" id="logo2"></div>
+        <div class="corner-logo" id="logo3"></div>
+        <div class="corner-logo" id="logo4"></div>
+    </div>
+
+    <script>
+        // Game variables
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreDisplay = document.getElementById('scoreDisplay');
+        const turnsDisplay = document.getElementById('turnsDisplay');
+        const cornerLogos = document.querySelectorAll('.corner-logo');
+        
+        let score = 0;
+        let turnsLeft = 5;
+        let gameOver = false;
+        
+        // Game objects
+        const miner = {
+            x: canvas.width / 2 - 50,
+            y: 70,
+            width: 100, // Smaller character width
+            height: 100, // Smaller character height
+            speed: 7,    // Increased speed to move across screen faster
+            direction: 0  // -1 for left, 0 for stopped, 1 for right
+        };
+        
+        // Explosion effect variables
+        let explosionActive = false;
+        let explosionAlpha = 0;
+        let explosionFadeIn = true;
+        
+        const hook = {
+            x: miner.x + miner.width / 2,
+            y: miner.y + miner.height,
+            width: 20,
+            length: 20,
+            maxLength: 500, // Increased max length to reach bottom
+            extending: false,
+            retracting: false,
+            speed: 8,      // Faster hook movement
+            item: null
+        };
+        
+        const items = [];
+        const itemTypes = [
+            { type: 'gold', color: '#FFD700', value: 100, size: 30 },
+            { type: 'gold', color: '#FFD700', value: 150, size: 40 },
+            { type: 'gold', color: '#FFD700', value: 200, size: 50 },
+            { type: 'stone', color: '#A9A9A9', value: -1, size: 35 }
+        ];
+        
+        // Images
+        const minerImage = new Image();
+        const logoImage = new Image();
+        let imagesLoaded = 0;
+        const requiredImages = 2;
+        
+        // Create a stone character image based on provided design
+        function createStoneCharacter() {
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = 120;
+            tempCanvas.height = 120;
+            const tempCtx = tempCanvas.getContext('2d');
+            
+            // Black outline thickness
+            const outlineWidth = 4;
+            
+            // Colors
+            const orangeColor = '#D2813D'; // Main body color
+            const tanColor = '#E8C096';    // Face color
+            const blackColor = '#1A1A1A';  // Outline color
+            
+            // Draw the body (torso)
+            tempCtx.fillStyle = blackColor;
+            tempCtx.fillRect(30, 40, 60, 40);
+            tempCtx.fillStyle = orangeColor;
+            tempCtx.fillRect(30 + outlineWidth/2, 40 + outlineWidth/2, 60 - outlineWidth, 40 - outlineWidth);
+            
+            // Draw the head (hexagon shape)
+            tempCtx.fillStyle = blackColor;
+            drawHexagon(tempCtx, 60, 25, 22);
+            tempCtx.fillStyle = tanColor;
+            drawHexagon(tempCtx, 60, 25, 22 - outlineWidth);
+            
+            // Draw the face dots (4 dots in a grid)
+            tempCtx.fillStyle = blackColor;
+            tempCtx.beginPath();
+            tempCtx.arc(52, 20, 3, 0, Math.PI * 2);
+            tempCtx.fill();
+            tempCtx.beginPath();
+            tempCtx.arc(68, 20, 3, 0, Math.PI * 2);
+            tempCtx.fill();
+            tempCtx.beginPath();
+            tempCtx.arc(52, 30, 3, 0, Math.PI * 2);
+            tempCtx.fill();
+            tempCtx.beginPath();
+            tempCtx.arc(68, 30, 3, 0, Math.PI * 2);
+            tempCtx.fill();
+            
+            // Draw arms
+            // Left arm
+            tempCtx.fillStyle = blackColor;
+            tempCtx.fillRect(10, 30, 25, 25);
+            tempCtx.fillStyle = orangeColor;
+            tempCtx.fillRect(10 + outlineWidth/2, 30 + outlineWidth/2, 25 - outlineWidth, 25 - outlineWidth);
+            // Left fist
+            tempCtx.fillStyle = blackColor;
+            tempCtx.fillRect(5, 28, 18, 18);
+            tempCtx.fillStyle = orangeColor;
+            tempCtx.fillRect(5 + outlineWidth/2, 28 + outlineWidth/2, 18 - outlineWidth, 18 - outlineWidth);
+            
+            // Right arm
+            tempCtx.fillStyle = blackColor;
+            tempCtx.fillRect(85, 30, 25, 25);
+            tempCtx.fillStyle = orangeColor;
+            tempCtx.fillRect(85 + outlineWidth/2, 30 + outlineWidth/2, 25 - outlineWidth, 25 - outlineWidth);
+            // Right fist
+            tempCtx.fillStyle = blackColor;
+            tempCtx.fillRect(97, 28, 18, 18);
+            tempCtx.fillStyle = orangeColor;
+            tempCtx.fillRect(97 + outlineWidth/2, 28 + outlineWidth/2, 18 - outlineWidth, 18 - outlineWidth);
+            
+            // Draw legs
+            // Left leg
+            tempCtx.fillStyle = blackColor;
+            tempCtx.fillRect(35, 80, 20, 30);
+            tempCtx.fillStyle = orangeColor;
+            tempCtx.fillRect(35 + outlineWidth/2, 80 + outlineWidth/2, 20 - outlineWidth, 30 - outlineWidth);
+            // Left foot
+            tempCtx.fillStyle = blackColor;
+            drawRoundedRect(tempCtx, 30, 105, 30, 15, 5);
+            tempCtx.fillStyle = orangeColor;
+            drawRoundedRect(tempCtx, 30 + outlineWidth/2, 105 + outlineWidth/2, 30 - outlineWidth, 15 - outlineWidth, 3);
+            
+            // Right leg
+            tempCtx.fillStyle = blackColor;
+            tempCtx.fillRect(65, 80, 20, 30);
+            tempCtx.fillStyle = orangeColor;
+            tempCtx.fillRect(65 + outlineWidth/2, 80 + outlineWidth/2, 20 - outlineWidth, 30 - outlineWidth);
+            // Right foot
+            tempCtx.fillStyle = blackColor;
+            drawRoundedRect(tempCtx, 60, 105, 30, 15, 5);
+            tempCtx.fillStyle = orangeColor;
+            drawRoundedRect(tempCtx, 60 + outlineWidth/2, 105 + outlineWidth/2, 30 - outlineWidth, 15 - outlineWidth, 3);
+            
+            return tempCanvas.toDataURL();
+        }
+        
+        // Helper function to draw hexagon
+        function drawHexagon(ctx, x, y, size) {
+            ctx.beginPath();
+            for (let i = 0; i < 6; i++) {
+                const angle = (i * Math.PI / 3) - Math.PI / 6;
+                const px = x + size * Math.cos(angle);
+                const py = y + size * Math.sin(angle);
+                if (i === 0) ctx.moveTo(px, py);
+                else ctx.lineTo(px, py);
+            }
+            ctx.closePath();
+            ctx.fill();
+        }
+        
+        // Helper function to draw rounded rectangle
+        function drawRoundedRect(ctx, x, y, width, height, radius) {
+            ctx.beginPath();
+            ctx.moveTo(x + radius, y);
+            ctx.lineTo(x + width - radius, y);
+            ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+            ctx.lineTo(x + width, y + height - radius);
+            ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+            ctx.lineTo(x + radius, y + height);
+            ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+            ctx.lineTo(x, y + radius);
+            ctx.quadraticCurveTo(x, y, x + radius, y);
+            ctx.closePath();
+            ctx.fill();
+        }
+        
+        // Initialize corner logos with the stone character image
+        function initializeCornerLogos() {
+            const logoUrl = createStoneCharacter();
+            cornerLogos.forEach(logo => {
+                logo.style.backgroundImage = `url(${logoUrl})`;
+            });
+            
+            // Start the animation for corner logos
+            animateCornerLogos();
+        }
+        
+        // Animate corner logos to bounce gently
+        function animateCornerLogos() {
+            let time = 0;
+            
+            function animate() {
+                time += 0.05;
+                const bounce = Math.sin(time) * 5;
+                
+                cornerLogos.forEach(logo => {
+                    logo.style.transform = `translateY(${bounce}px)`;
+                });
+                
+                requestAnimationFrame(animate);
+            }
+            
+            animate();
+        }
+        
+        // Initialize game
+        function init() {
+            // Set up miner image
+            minerImage.src = createStoneCharacter();
+            minerImage.onload = imageLoaded;
+            
+            // Use the same image for logo
+            logoImage.src = minerImage.src;
+            logoImage.onload = imageLoaded;
+            
+            // Generate initial items
+            generateItems();
+            
+            // Set up corner logos
+            initializeCornerLogos();
+            
+            // Start game loop
+            requestAnimationFrame(gameLoop);
+            
+            // Set up event listeners
+            window.addEventListener('keydown', handleKeyDown);
+            window.addEventListener('keyup', handleKeyUp);
+        }
+        
+        function imageLoaded() {
+            imagesLoaded++;
+            if (imagesLoaded >= requiredImages) {
+                // All images are loaded, start the game
+            }
+        }
+        
+        // Generate random items
+        function generateItems() {
+            items.length = 0;
+            const numItems = 12;
+            const spacing = canvas.width / numItems;
+            
+            for (let i = 0; i < numItems; i++) {
+                const itemType = itemTypes[Math.floor(Math.random() * itemTypes.length)];
+                const depth = Math.random() * 150 + 200;
+                
+                items.push({
+                    x: i * spacing + spacing / 2,
+                    y: canvas.height - depth,
+                    type: itemType.type,
+                    color: itemType.color,
+                    value: itemType.value,
+                    size: itemType.size,
+                    caught: false
+                });
+            }
+        }
+        
+        // Handle keyboard input
+        function handleKeyDown(e) {
+            if (gameOver) return;
+            if (explosionActive && explosionFadeIn) return; // Disable controls during explosion
+            
+            switch (e.key) {
+                case 'ArrowLeft':
+                    miner.direction = -1;
+                    break;
+                case 'ArrowRight':
+                    miner.direction = 1;
+                    break;
+                case ' ':
+                    if (!hook.extending && !hook.retracting) {
+                        hook.extending = true;
+                    }
+                    break;
+            }
+        }
+        
+        function handleKeyUp(e) {
+            if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+                miner.direction = 0;
+            }
+        }
+        
+        // Update game state
+        function update() {
+            if (gameOver) return;
+            
+            // Update explosion effect
+            updateExplosionEffect();
+            
+            // Update miner position
+            miner.x += miner.direction * miner.speed;
+            
+            // Keep miner within canvas - allow full movement across the screen
+            if (miner.x < 0) miner.x = 0;
+            if (miner.x + miner.width > canvas.width) miner.x = canvas.width - miner.width;
+            
+            // Update hook position
+            if (!hook.extending && !hook.retracting) {
+                hook.x = miner.x + miner.width / 2 - hook.width / 2;
+                hook.y = miner.y + miner.height;
+                hook.length = 20;
+            }
+            
+            // Extend hook
+            if (hook.extending) {
+                hook.length += hook.speed;
+                
+                // Check if hook hit any item
+                items.forEach(item => {
+                    if (!item.caught && !hook.item) {
+                        const hookEndY = hook.y + hook.length;
+                        const hookEndX = hook.x + hook.width / 2;
+                        
+                        const dx = hookEndX - item.x;
+                        const dy = hookEndY - item.y;
+                        const distance = Math.sqrt(dx * dx + dy * dy);
+                        
+                        if (distance < item.size / 2) {
+                            item.caught = true;
+                            hook.item = item;
+                            hook.extending = false;
+                            hook.retracting = true;
+                        }
+                    }
+                });
+                
+                // Check if hook reached max length
+                if (hook.length >= hook.maxLength) {
+                    hook.extending = false;
+                    hook.retracting = true;
+                }
+            }
+            
+            // Retract hook
+            if (hook.retracting) {
+                hook.length -= hook.speed;
+                
+                // Update caught item position
+                if (hook.item) {
+                    hook.item.x = hook.x + hook.width / 2;
+                    hook.item.y = hook.y + hook.length;
+                }
+                
+                // Check if hook is fully retracted
+                if (hook.length <= 20) {
+                    hook.retracting = false;
+                    
+                    // Handle caught item
+                    if (hook.item) {
+                        if (hook.item.type === 'gold') {
+                            score += hook.item.value;
+                            scoreDisplay.textContent = score;
+                        } else if (hook.item.type === 'stone') {
+                            // Full screen explosion effect
+                            showExplosionEffect();
+                            
+                            turnsLeft--;
+                            turnsDisplay.textContent = turnsLeft;
+                            
+                            // Check if game over
+                            if (turnsLeft <= 0) {
+                                gameOver = true;
+                            }
+                        }
+                        
+                        hook.item = null;
+                        
+                        // Check if all items are caught
+                        const itemsLeft = items.filter(item => !item.caught).length;
+                        if (itemsLeft === 0) {
+                            generateItems();
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Show full screen explosion effect
+        function showExplosionEffect() {
+            explosionActive = true;
+            explosionAlpha = 0;
+            explosionFadeIn = true;
+        }
+        
+        // Update explosion effect
+        function updateExplosionEffect() {
+            if (!explosionActive) return;
+            
+            if (explosionFadeIn) {
+                explosionAlpha += 0.1;
+                if (explosionAlpha >= 1) {
+                    explosionAlpha = 1;
+                    explosionFadeIn = false;
+                }
+            } else {
+                explosionAlpha -= 0.05;
+                if (explosionAlpha <= 0) {
+                    explosionAlpha = 0;
+                    explosionActive = false;
+                }
+            }
+        }
+        
+        // Draw game objects
+        function draw() {
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw background (sky and ground)
+            ctx.fillStyle = '#87CEEB';  // Sky blue
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            ctx.fillStyle = '#8B4513';  // Brown ground
+            ctx.fillRect(0, canvas.height - 100, canvas.width, 100);
+            
+            // Draw miner and cart
+            ctx.drawImage(minerImage, miner.x, miner.y, miner.width, miner.height);
+            
+            // Draw cart - smaller size
+            // Cart body
+            ctx.fillStyle = '#5D4037'; // Dark brown
+            ctx.fillRect(miner.x + miner.width, miner.y + 50, 50, 30);
+            ctx.fillStyle = '#8D6E63'; // Lighter brown
+            ctx.fillRect(miner.x + miner.width + 5, miner.y + 55, 40, 20);
+            
+            // Cart rim
+            ctx.fillStyle = '#3E2723'; // Very dark brown
+            ctx.fillRect(miner.x + miner.width, miner.y + 45, 50, 5);
+            
+            // Draw wheels with outlines
+            ctx.fillStyle = '#1A1A1A'; // Black outline
+            ctx.beginPath();
+            ctx.arc(miner.x + miner.width + 15, miner.y + 80, 8, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(miner.x + miner.width + 35, miner.y + 80, 8, 0, Math.PI * 2);
+            ctx.fill();
+            
+            ctx.fillStyle = '#4E342E'; // Wheel color
+            ctx.beginPath();
+            ctx.arc(miner.x + miner.width + 15, miner.y + 80, 5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(miner.x + miner.width + 35, miner.y + 80, 5, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Draw hook line
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(hook.x + hook.width / 2, hook.y);
+            ctx.lineTo(hook.x + hook.width / 2, hook.y + hook.length);
+            ctx.stroke();
+            
+            // Draw V-shaped hook
+            if (hook.extending || hook.retracting) {
+                ctx.beginPath();
+                ctx.moveTo(hook.x + hook.width / 2, hook.y + hook.length);
+                ctx.lineTo(hook.x, hook.y + hook.length + 10);
+                ctx.stroke();
+                
+                ctx.beginPath();
+                ctx.moveTo(hook.x + hook.width / 2, hook.y + hook.length);
+                ctx.lineTo(hook.x + hook.width, hook.y + hook.length + 10);
+                ctx.stroke();
+            }
+            
+            // Draw items
+            items.forEach(item => {
+                if (!item.caught) {
+                    ctx.fillStyle = item.color;
+                    ctx.beginPath();
+                    ctx.arc(item.x, item.y, item.size / 2, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    // Add details to gold
+                    if (item.type === 'gold') {
+                        ctx.fillStyle = '#FFA500';
+                        ctx.beginPath();
+                        ctx.arc(item.x - item.size / 5, item.y - item.size / 5, item.size / 8, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                    
+                    // Add details to stone
+                    if (item.type === 'stone') {
+                        ctx.strokeStyle = '#696969';
+                        ctx.lineWidth = 1;
+                        for (let i = 0; i < 4; i++) {
+                            ctx.beginPath();
+                            ctx.moveTo(item.x - item.size / 3, item.y - item.size / 3 + i * 5);
+                            ctx.lineTo(item.x + item.size / 3, item.y - item.size / 3 + i * 5);
+                            ctx.stroke();
+                        }
+                    }
+                }
+            });
+            
+            // Draw explosion effect
+            if (explosionActive) {
+                const gradient = ctx.createRadialGradient(
+                    canvas.width / 2, canvas.height / 2, 0,
+                    canvas.width / 2, canvas.height / 2, canvas.width
+                );
+                gradient.addColorStop(0, `rgba(255, 50, 0, ${explosionAlpha})`);
+                gradient.addColorStop(0.4, `rgba(255, 150, 0, ${explosionAlpha * 0.8})`);
+                gradient.addColorStop(1, `rgba(255, 200, 0, 0)`);
+                
+                ctx.fillStyle = gradient;
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                // Add some explosion particles
+                if (explosionFadeIn) {
+                    for (let i = 0; i < 10; i++) {
+                        const particleX = Math.random() * canvas.width;
+                        const particleY = Math.random() * canvas.height;
+                        const particleSize = Math.random() * 20 + 5;
+                        
+                        ctx.fillStyle = `rgba(255, ${Math.floor(Math.random() * 200)}, 0, ${explosionAlpha})`;
+                        ctx.beginPath();
+                        ctx.arc(particleX, particleY, particleSize, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                }
+            }
+            
+            // Draw game over message
+            if (gameOver) {
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                ctx.fillStyle = 'white';
+                ctx.font = '36px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('Game Over!', canvas.width / 2, canvas.height / 2 - 40);
+                ctx.fillText(`Final Score: ${score}`, canvas.width / 2, canvas.height / 2 + 10);
+                ctx.font = '24px Arial';
+                ctx.fillText('Press R to restart', canvas.width / 2, canvas.height / 2 + 60);
+            }
+        }
+        
+        // Game loop
+        function gameLoop() {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // Restart game
+        function restartGame() {
+            score = 0;
+            turnsLeft = 5;
+            gameOver = false;
+            scoreDisplay.textContent = score;
+            turnsDisplay.textContent = turnsLeft;
+            generateItems();
+        }
+        
+        // Handle restart
+        window.addEventListener('keydown', function(e) {
+            if (gameOver && e.key === 'r') {
+                restartGame();
+            }
+        });
+        
+        // Start the game
+        init();
+    </script>
+</body>
+</html>
